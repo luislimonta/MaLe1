@@ -1,0 +1,774 @@
+---
+output:
+  pdf_document:
+    fig_caption: yes
+    number_sections: yes
+csl: methods-in-ecology-and-evolution.csl
+urlcolor: black
+linkcolor: black
+fontsize: 12pt
+geometry: margin = 1.2in
+header-includes:
+- \usepackage{placeins}
+- \usepackage{fancyhdr}
+- \usepackage{setspace}
+- \usepackage{chngcntr}
+- \usepackage{microtype}
+- \onehalfspacing
+- \counterwithin{figure}{section}
+- \counterwithin{table}{section}
+---
+
+---
+nocite: 
+...
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.path = 'figures/',
+                      echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+\pagenumbering{gobble}
+```{r child = 'titlepage.Rmd'}
+```
+
+\newpage
+\pagestyle{fancy}
+
+\fancyhead[LE,RO]{}
+\fancyhead[LO,RE]{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\pagenumbering{roman}
+
+\newpage
+\fancyhead[CO,CE]{Table of Contents}
+\setcounter{tocdepth}{2}
+\tableofcontents
+
+\newpage
+\pagenumbering{arabic}
+
+\newpage
+\fancyhead[CO,CE]{Introduction}
+
+
+# Description
+
+For this Group Work we use the «Dutch Electricity» data set. It can be downloaded from kaggle with the following link (https://www.kaggle.com/lucabasa/dutch‐energy/downloads/dutch‐energy.zip/1).
+The data set describes data for the electricity and gas consumptions of the household and firms in the three areas served by the mayor distributors in the Netherlands. The Group Work is divided in different parts. As Group 3 we will use set.seed(3) to identify our results.
+
+# Data Pre-processing
+
+## Clean your R Markdown
+Before you start you can clean your R Markdown
+
+```{r clean your environment, echo=TRUE}
+rm(list=ls()) # clear environment
+par(mfrow=c(1,1)) # set plotting window to default
+```
+
+## Configuration and first steps
+Please execute the following steps of the configuration to proceed in this document:
+
+- Load Config & first steps
+- set directory with setwd to target directory
+- make sure that the target files are in applicable folder (/data/Gas & /data/Electricity)
+
+## Set working directory
+Get the source location of this script and set it as your working directory 
+
+```{r setwd, echo=TRUE, message=TRUE}
+# script.dir <- dirname(rstudioapi::getActiveDocumentContext()$path)
+# setwd(script.dir)
+# getwd() #tell the actual working directory
+```
+
+## Import all the relevant libraries (TODO: DO WE NEED ALL OF THEM? IS THERE STH MISSING?)
+To work with this R Markdown please download the followning libraries.
+
+```{r import, echo=TRUE, message=FALSE, warning=FALSE}
+library(RColorBrewer)
+library(tidyverse)
+library(corrplot)
+library(leaps)
+library(glmnet)
+library(DataExplorer)
+library (class)
+library (pls)
+library(randomForest)
+library(tree)
+library(caret)
+library(Boruta)
+library(glm2)
+library(ROCR) 
+library(lmtest)
+library(dplyr)
+library(e1071)
+```
+
+## Set printing preferences
+Scripen: penalty for displaying scientific notation
+Digits: suggested number of digits to display
+
+```{r printing preferences}
+options(scipen=99) 
+options(digits=4)
+```
+
+## Set seed for same results
+We use the total dataset for this Group Work.
+But we will divide it differently into train and test datasets by using as seed the group 03. This is our group ID.
+
+```{r set.seed}
+set.seed(3)
+```
+
+## Inizialization of empyt dataset
+
+
+```{r empty dataset}
+input_dataset.gas <- data.frame()
+input_dataset.electricity <- data.frame()
+input_dataset.joined <- data.frame()
+```
+
+You can now import the mentioned Dataset.
+
+## Load the Gas Dataset
+```{r import Gas}
+tmp_path <- "Gas/" 
+file_list <- list.files(tmp_path)
+
+```
+
+We need to get the reference year out of file name with this code, read files from directory and add the column ref-year:
+
+```{r , warning=FALSE}
+tmp_path <- "Gas/" 
+file_list <- list.files(tmp_path)
+for (file in file_list){
+  
+  # get reference year out of file name
+  ref_year <- strsplit(file, "_")
+  ref_year <- unlist(ref_year)[length(unlist(ref_year))]
+  ref_year <- strsplit(ref_year, "\\.")
+  ref_year <- unlist(ref_year)[1]
+  ref_year <- substr(ref_year, nchar(ref_year)-3, nchar(ref_year))
+  ref_year <- as.numeric(ref_year)-1
+  
+  # read files from directory and add column ref-year 
+  temp_dataset <- read.csv(paste(tmp_path,file,sep=""), header=TRUE, sep=",", stringsAsFactors = FALSE, fill = TRUE)
+  temp_dataset <- cbind(temp_dataset, ref_year)
+  input_dataset.gas <- rbind(input_dataset.gas, temp_dataset)
+  rm(temp_dataset)
+}
+```
+
+
+## Load the Electricity
+```{r import Electricity}
+tmp_path <- "Electricity/" # stephana
+#tmp_path <- "./data/Electricity/" # ronny
+file_list <- list.files(tmp_path)
+
+```
+
+We need to get the reference year out of the file name with this code and read the files from directory and add the column ref-year:
+
+```{r import Dataset Electricity}
+for (file in file_list){
+  ref_year <- strsplit(file, "_")
+  ref_year <- unlist(ref_year)[length(unlist(ref_year))]
+  ref_year <- strsplit(ref_year, "\\.")
+  ref_year <- unlist(ref_year)[1]
+  ref_year <- substr(ref_year, nchar(ref_year)-3, nchar(ref_year))
+  ref_year <- as.numeric(ref_year)-1
+temp_dataset <- read.csv(paste(tmp_path,file,sep=""), header=TRUE, sep=",", stringsAsFactors = FALSE,fill = TRUE)
+temp_dataset <- cbind(temp_dataset, ref_year)
+input_dataset.electricity <- rbind(input_dataset.electricity, temp_dataset)
+rm(temp_dataset)
+}
+```
+
+## Load the combined dataset (TODO: CODE WAS NOT WORKING)
+
+Threshold for electricity is et to the mean of the annual consume
+Threshold for Gas is set to the mean of the annual consume
+The join for both datasets is done on ("street", "zipcode_from", "zipcode_to", "ref_year")
+## Create preprocessing functions (TODO: WHEN DO WE NEED THIS?)
+```{r}
+# make built in function to convert classes
+convertClasses <- function(dataset, convert_to, convert_classes = c(), exceptions = c()){
+  
+  for(colnr in 1:ncol(dataset)){
+    if(class(dataset[,colnr]) %in% convert_classes && !colnames(dataset)[colnr] %in% exceptions){
+      print(paste(colnames(dataset)[colnr], ": is ", class(dataset[,colnr]) ," and gets converted to ", convert_to))
+      if(convert_to == "factor"){
+        print(paste("Convert factor ", colnames(dataset)[colnr]))
+        dataset[,colnr] <- as.factor(dataset[,colnr])
+      }else if(convert_to == "nummeric"){
+        print(paste("Convert numeric ", colnames(dataset)[colnr]))
+        dataset[,colnr] <- as.numeric(dataset[,colnr])
+      }else if(convert_to == "character"){
+        print(paste("Convert character ", colnames(dataset)[colnr]))
+        dataset[,colnr] <- as.character(dataset[,colnr])
+      }else{
+        print("Unknown conversion class: ", convert_to)
+      }
+    }
+  }
+  
+  return(dataset)
+  
+}
+
+# make built in function to reduce the number of factros in a dataset to a threshold
+reduceThFactors <- function(dataset, threshold = 10, replaceFactors = FALSE, exceptions = C(), reduce_classes = c("integer", "double", "logical", "numeric")){
+  
+  # reduce number of predictors, remove factors with more unique observations then threshold (th)
+  # transform characters to numeric
+  dim(dataset)
+  red <- c()
+  for(colnr in 1:ncol(dataset)){
+    if(!class(dataset[,colnr]) %in% reduce_classes && length(unique(dataset[,colnr])) > threshold && !colnames(dataset)[colnr] %in% exceptions){
+      print(paste("Is", colnames(dataset)[colnr],"in exceptions list '", class(dataset[,colnr]), "' and has more than ", threshold, "uniques: ", length(unique(dataset[,colnr]))))
+      if(!replaceFactors){
+        red <- append(red,c(-1*colnr))
+      }else{
+        dataset[,colnr] <- replace(dataset[,colnr], is.na(dataset[,colnr]), median(dataset[,colnr], na.rm = TRUE))
+      }
+      
+      
+    }
+  }
+  
+  print(red)
+  if(!is.null(red)){dataset <- dataset[,red]}
+  print(paste("Col Nr: ",colnr, "     -      reduced by: ", length(red), "                - dims: ",dim(dataset)))
+  dim(dataset)
+  return(dataset)
+  
+}
+
+# make built in function to reduce null containing columns in a dataset to a threshold
+# threshold set based on plot_missing
+reduceThNull <- function(dataset, threshold = 40, omitRest = FALSE, exceptions = C()){
+  
+  # reduce number of predictors, remove factors with more percentage of null observations then threshold (th)
+  # transform characters to numeric
+  dim(dataset)
+  red <- c()
+  for(colnr in 1:ncol(dataset)){
+    perNull <- 100 / length(dataset[,colnr]) * sum(is.na(dataset[,colnr]))
+    print(paste(" ---- ", colnr,"  >>> ", colnames(dataset)[colnr], " ----- ", all(is.na(dataset[,colnr]))))
+    if(all(is.na(dataset[,colnr]))){
+      red <- append(red,c(-1*colnr))
+      next
+    }
+    if(perNull > threshold && !colnames(dataset)[colnr] %in% exceptions){
+      print(paste("Has", colnames(dataset)[colnr]," more Nulls '(", sum(is.na(dataset[,colnr])), " -> ", perNull, "%" ,")' than threshold: ", threshold))
+      red <- append(red,c(-1*colnr))
+    }
+  }
+  print(red)
+  if(!is.null(red)){dataset <- dataset[,red]}
+  print(paste("Col Nr: ",colnr, "     -      reduced by: ", length(red), "                - dims: ",dim(dataset)))
+  dim(dataset)
+  
+  if(omitRest){
+    dataset <- na.omit(dataset)
+    print("Nulls omitted")
+  }
+  
+  return(dataset)
+  
+}
+
+# make built in function to replace null containing columns in a dataset
+replaceNull <- function(dataset, replaceText = "unknown", numericMethod = "median", exceptions = C()){
+  # Exception handling & preprocessing missing
+  #
+  #dataset: numeric matrix of data
+  #exceptions: variables not to be replaced
+  #replaceText: text which is the replacement for NA in text/factor classes 
+  #numericMethod: method to apply for replacing numeric predictors; allowed values: median, average, zero
+  
+  for(colnr in 1:ncol(dataset)){
+    if(!colnames(dataset)[colnr] %in% exceptions){
+      
+      # mutate missing values
+      
+      # numeric classes
+      if(class(dataset[,colnr]) %in% c("integer", "double","numeric")){
+        print(paste("replace numeric ",colnames(dataset)[colnr]))
+        if(numericMethod == "median"){
+          dataset[,colnr] <- replace(dataset[,colnr], is.na(dataset[,colnr]), median(dataset[,colnr], na.rm = TRUE))
+          print(median(dataset[,colnr], na.rm = TRUE))
+        }else if(numericMethod == "mean"){
+          dataset[,colnr] <- replace(dataset[,colnr], is.na(dataset[,colnr]), mean(dataset[,colnr], na.rm = TRUE))
+        }else if(numericMethod == "zero"){
+          dataset[,colnr] <- replace(dataset[,colnr], is.na(dataset[,colnr]), 0)
+        }else{
+          print(paste("Method ",numericMethod, " invalid. Valid values for numeric replacment are: median, mean, zero"))
+        }
+      }
+      
+      # logical classes
+      if(class(dataset[,colnr]) %in% c("logical")){
+        print(paste("replace logical ",colnames(dataset)[colnr]))
+        dataset[,colnr] <- replace(dataset[,colnr], is.na(dataset[,colnr]), median(dataset[,colnr], na.rm = TRUE))
+      }
+      
+      # text classes
+      if(class(dataset[,colnr]) %in% c("character")){
+        print(paste("replace text ",colnames(dataset)[colnr]))
+        dataset[,colnr] <- replace(dataset[,colnr], is.na(dataset[,colnr]), replaceText)
+      }
+      
+      # factor classes
+      if(class(dataset[,colnr]) %in% c("factor")){
+        print(paste("replace factor ",colnames(dataset)[colnr]))
+        dataset[,colnr] <- as.character(dataset[,colnr])
+        dataset[,colnr] <- replace(dataset[,colnr], is.na(dataset[,colnr]), replaceText)
+        dataset[,colnr] <- as.factor(dataset[,colnr])
+      }
+      
+      
+      
+    }
+  }
+  
+  
+  return(dataset)
+  
+}
+```
+
+
+
+
+
+
+# Part 1 
+
+The goal of this part is to test if there is any relationship between the smart meter percentage and the total consumption of electricity (Smart Meter ~ Total consumption). The underlying idea is the presence of smart meter can be seen as an indicator of presence of self production in the household (prosumer).
+
+Additionally, we would like to explore if there is a relationship between the ratio of low_tarif electricity consumption, defined as low_tarif / total_consumption, and the same predictor mentioned before, that is 'Total consumption' (low_tarif ~ Total consumption)
+
+The first analysis is done with a linear model, the second with SVM (linear, radial and sigmoid) and the third, as an optional, with a neural network model. All the models were fitted using a train set and then the train, test and ratio test/train errors were calculated using the metrics  R^2, RSS, MSE, RMSE and MAE.
+
+As a result, for each set of analysis (Smart Meter ~ Total consumption and Smart Meter ~ Total consumption) a table of errors was created. This errors are discussed and the best model for each set of analsys is selected.
+
+After selecting the best model for each set of analysis, the model was fitted again on the train set, but this time using K-Fold cross-validation method. The errors are again calculated, discussed and then compared with the previous metrics.
+
+## Data Preparation
+
+To make the data feaseable for Part 1 we have to subselect 1% of the electricity data. 
+```{r import Dataset}
+electricity.small <- input_dataset.electricity[sample(1:nrow(input_dataset.electricity), 0.01*nrow(input_dataset.electricity)),]
+```
+
+
+Check the data:
+```{r}
+head(electricity.small)
+
+summary(electricity.small)
+```
+
+The reduced electricity data set has 16 features and 35657 observation. 
+
+The features are:
+
+* net_manager: code of the regional network manager
+* purchase_area: code of the area where the energy is purchased
+* street: Name of the street
+* zipcodefrom and zipcodeto: 2 columns for the range of zipcodes covered, 4 numbers and 2 letters
+* city: Name of the city
+* num_connections: Number of connections in the range of zipcodes
+* delivery_perc: percentage of the net consumption of electricity or gas. The lower, the more energy was given back to the grid (for example if you have solar panels)
+* perc_of_active_connections: Percentage of active connections in the zipcode range
+* type_of_connection: principal type of connection in the zipcode range. For electricity is # fuses X # ampère. For gas is G4, G6, G10, G16, G25
+* type_conn_perc: percentage of presence of the principal type of connection in the zipcode range
+* annual_consume: Annual consume. Kwh for electricity, m3 for gas
+* annual_consume_lowtarif_perc: Percentage of consume during the low tarif hours. From 10 p.m. to 7 a.m. and during weekends.
+* smartmeter_perc: percentage of smartmeters in the zipcode ranges
+
+It can be seen that there are geographical informations as well as net, connections, consume and presence of smart meter informations. As it was already mentioned, for part one the features of interest are 'smartmeter_perc' , 'annual_consume' and 'annual_consume_lowtarif_perc'. For this reason, the dataset was subselected with this features as follow.
+
+```{r}
+output_SmartMeter = electricity.small$smartmeter_perc
+predictor_Consumption = electricity.small$annual_consume
+predictor_LowTarifRatio = electricity.small$annual_consume_lowtarif_perc / 100
+
+d.task1 = data.frame(output_SmartMeter,
+                     predictor_Consumption,
+                     predictor_LowTarifRatio)
+```
+
+We can define smartmeter percentage as the output variable, the predictor annual_consume (Consuption) and Low Tarif Ratio as the second predictor. The ratio of the Low Tarif Ratio is computed: low tarif consumption percentage / 100. 
+
+## Data Exploration TODO: plots and interpretations to be included
+
+The histogram of electricity.small$annual_consume it looks right skewed. When we look at annual_consume_lowtarif_perc it
+seems to look alright. Alsi smartmeter_perc looks right skewed. Theoretically speaking we could log the data as this was discussed with Matteo Tannadini, but it is not asked in this group work.
+
+```{r , echo=FALSE}
+
+hist(electricity.small$annual_consume)
+
+hist(electricity.small$annual_consume_lowtarif_perc/100)
+
+hist(electricity.small$smartmeter_perc)
+
+```
+
+
+First we define the output and predictors. And just out of curiosity we plot the output variable.
+```{r define output, predictor and dataframe}
+output_SmartMeter = electricity.small$smartmeter_perc
+predictor_Consumption = electricity.small$annual_consume
+predictor_LowTarifRatio = electricity.small$annual_consume_lowtarif_perc / 100
+
+d.task1 = data.frame(output_SmartMeter,
+                     predictor_Consumption,
+                     predictor_LowTarifRatio)
+
+# output_SmartMeter.svm = electricity.svm$smartmeter_perc
+# predictor_Consumption.svm = electricity.svm$annual_consume
+# predictor_LowTarifRatio.svm = electricity.svm$annual_consume_lowtarif_perc / 100
+# 
+# d.task.svm = data.frame(output_SmartMeter.svm,
+#                      predictor_Consumption.svm,
+#                      predictor_LowTarifRatio.svm)
+```
+
+```{r , echo=FALSE}
+
+ggplot(electricity.small, aes(output_SmartMeter)) + geom_density(fill="blue")
+ggplot(electricity.small, aes(log(output_SmartMeter))) + geom_density(fill="blue")
+ggplot(electricity.small, aes(sqrt(output_SmartMeter))) + geom_density(fill="blue")
+```
+```{r , echo=FALSE}
+
+ggplot(data = electricity.small,
+       mapping = aes(y = predictor_Consumption,
+                     x = output_SmartMeter)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+You can see a very light negative correlation but the plot is hard to interpret.
+
+```{r, echo=FALSE}
+ggplot(data = electricity.small,
+       mapping = aes(y = predictor_LowTarifRatio,
+                     x = output_SmartMeter)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+```
+You can see a very nice plot which is also hard to interpret.
+
+
+
+## Define Training and Test Set
+
+The Group Works description defines a 30/70 Rule for deviding the Trainingset and Testset Create a testset by excluding all data points with an index value. This was not so clear formulated in the Group Work assignment. As you can interpret as the testset should have 70% of the datapoints and the trainingset only 30%. State of the art is a split of 70% for the trainingset and 30% for the testset. Which was done in this group work in the next chunk:
+
+```{r Training and Testset}
+setsize = floor(nrow(d.task1)*0.7)
+training.index.t1 <- sample(seq_len(nrow(d.task1)), size = setsize)
+d.train.t1 = d.task1[training.index.t1,]
+d.test.t1 = d.task1[-training.index.t1,]
+
+```
+
+## Define Error Metrics
+
+```{r}
+  # Calculate the value of R-squared for the prediction model on the test data set
+  R2 <- function(y.true,y.pred) {
+    SSE <- sum((y.true - y.pred )^2)
+    SST<- sum((y.true - mean(y.true)) ^ 2)
+    R2 <- 1 - SSE/SST
+    return(R2)
+  }
+
+  # Function to calculate RSS
+  RSS.train <- function(fit) {
+    sum(resid(fit)^2)
+  }
+  
+  # Calculate the squared deviation of the predicted values from the observed values
+  RSS <- function(y.true,y.pred) {
+    deviation <- (y.true - y.pred)^2
+    RSS <- sum(deviation)
+    return(RSS)
+  }
+  
+
+   #Compute the mean squared error regression loss or RSE
+   MSE <- function( y.true,y.pred) {
+     MSE <- mean((y.true - y.pred)^2)
+     return(MSE)
+   }
+   
+   #Compute the root mean squared error regression loss.
+   RMSE <- function(y.true,y.pred) {
+     RMSE <- sqrt(mean((y.true - y.pred)^2))
+     return(RMSE)
+   }
+   
+   #Compute the mean absolute error regression loss.
+   MAE <- function(y.true,y.pred) {
+     MAE <- mean(abs(y.true - y.pred))
+     return(MAE)
+   }
+  
+   # Put all errors in one vector
+   MLErrors <- function(y.true,y.pred) {
+   c(R2 = R2(y.true,y.pred),
+     RSS =  RSS(y.true,y.pred),
+     MSE = MSE(y.true,y.pred),
+     RMSE = RMSE(y.true,y.pred),
+     MAE= MAE(y.true,y.pred))
+   }
+```
+
+By using the function MLErrors(y.true,y.pred), all the errors metrics between true and predicted data are calculated in one vector.
+
+## Analysis Set 1 : Relationship between the smart meter percentage and the total consumption of electricity.
+
+### Linear Model
+
+Fit linear model on train set and predict on train and test set in order to get the errors.
+
+```{r}
+#Fit a linear model using the train set ----
+lm.smart.train <- lm(output_SmartMeter ~ predictor_Consumption, data = d.train.t1)
+
+#predict on train set
+   lm.smart.pred.train <- predict(lm.smart.train, d.train.t1)
+   
+#predict on test set
+   lm.smart.pred.test <- predict(lm.smart.train, d.test.t1)
+```
+
+Get the train, test and ratio test/train of this model.
+
+```{r}
+#train errors   
+lm.smart.train.errors <- MLErrors(d.train.t1$output_SmartMeter,lm.smart.pred.train)
+lm.smart.train.errors
+#test errors
+lm.smart.test.errors <- MLErrors(d.test.t1$output_SmartMeter,lm.smart.pred.test)
+lm.smart.test.errors
+
+#ratioTEST/TRAIN ----
+lm.smart.ratio.errors <- lm.smart.test.errors/lm.smart.train.errors
+lm.smart.ratio.errors
+```
+
+
+### Support Vector Machine
+
+Unfortunatelly, the normal laptops that this group has does not have power to run such models with a big data set. For this reason, the data must be shortened again.
+
+```{r}
+d.1.train <- sample(seq_len(nrow(d.train.t1)),0.09*(nrow(d.train.t1)))
+d.1.test <- sample(seq_len(nrow(d.test.t1)), 0.09*(nrow(d.test.t1)))
+```
+
+The fittings below are done following the same approach used on the linear model.
+
+#### Linear Kernel
+
+```{r}
+# fit linear SVM: This model was already fit and take a long time. The results 
+# were saved in as a .rds file.
+
+# svm.linear.smart.train <- svm(
+#   output_SmartMeter ~ predictor_Consumption,
+#   data = d.train.t1[d.1.train,],
+#   kernel = "linear",
+#   cost = 10,
+#   scale = FALSE
+# )
+
+#Read the resulted model alrady run and previouslly saved:
+svm.linear.smart.train <- readRDS("svm.linear.smart.train_A1.rds")
+
+#predict on train set
+svm.linear.smart.pred.train <- predict(svm.linear.smart.train, d.train.t1[d.1.train,])
+
+#predict on test set
+svm.linear.smart.pred.test <- predict(svm.linear.smart.train, d.test.t1[d.1.test,])
+
+#train errors   
+svm.linear.smart.train.errors <- MLErrors(d.train.t1[d.1.train,"output_SmartMeter"],svm.linear.smart.pred.train)
+svm.linear.smart.train.errors
+#test errors
+svm.linear.smart.test.errors <- MLErrors(d.test.t1[d.1.test,"output_SmartMeter"],svm.linear.smart.pred.test)
+svm.linear.smart.test.errors
+
+# RATIO TEST/TRAIN ----
+svm.linear.smart.ratio.errors <- svm.linear.smart.test.errors/svm.linear.smart.train.errors
+svm.linear.smart.ratio.errors
+```
+
+#### Radial Kernel
+
+```{r}
+# # fit radial SVM
+# svm.radial.smart.train <- svm(
+#   output_SmartMeter ~ predictor_Consumption,
+#   data = d.train.t1[d.1.train,],
+#   kernel = "radial",
+#   cost = 10,
+#   scale = FALSE
+# )
+
+#Read the resulted model alrady run and previouslly saved:
+svm.radial.smart.train <- readRDS("svm.radial.smart.train_A1.rds")
+
+#predict on train set
+svm.radial.smart.pred.train <- predict(svm.radial.smart.train, d.train.t1[d.1.train,])
+
+#predict on test set
+svm.radial.smart.pred.test <- predict(svm.radial.smart.train, d.test.t1[d.1.test,])
+
+#train errors   
+svm.radial.smart.train.errors <- MLErrors(d.train.t1[d.1.train,"output_SmartMeter"],svm.radial.smart.pred.train)
+svm.radial.smart.train.errors
+#test errors
+svm.radial.smart.test.errors <- MLErrors(d.test.t1[d.1.test,"output_SmartMeter"],svm.radial.smart.pred.test)
+svm.radial.smart.test.errors
+
+# RATIO TEST/TRAIN ----
+svm.radial.smart.ratio.errors <- svm.radial.smart.test.errors/svm.radial.smart.train.errors
+svm.radial.smart.ratio.errors
+```
+
+#### Sigmoid Kernel
+
+```{r}
+# fit sigmoid SVM
+# svm.sigmoid.smart.train <- svm(
+#   output_SmartMeter ~ predictor_Consumption,
+#   data = d.train.t1[d.1.train,],
+#   kernel = "sigmoid",
+#   cost = 10,
+#   scale = FALSE
+# )
+
+#Read the resulted model already run and previouslly saved:
+svm.sigmoid.smart.train <- readRDS("svm.sigmoid.smart.train_A1.rds")
+
+#predict on train set
+svm.sigmoid.smart.pred.train <- predict(svm.sigmoid.smart.train, d.train.t1[d.1.train,])
+
+#predict on test set
+svm.sigmoid.smart.pred.test <- predict(svm.sigmoid.smart.train, d.test.t1[d.1.test,])
+
+#train errors   
+svm.sigmoid.smart.train.errors <- MLErrors(d.train.t1[d.1.train,"output_SmartMeter"],svm.sigmoid.smart.pred.train)
+svm.sigmoid.smart.train.errors
+#test errors
+svm.sigmoid.smart.test.errors <- MLErrors(d.test.t1[d.1.test,"output_SmartMeter"],svm.sigmoid.smart.pred.test)
+svm.sigmoid.smart.test.errors
+
+# RATIO TEST/TRAIN ----
+svm.sigmoid.smart.ratio.errors <- svm.sigmoid.smart.test.errors/svm.sigmoid.smart.train.errors
+svm.sigmoid.smart.ratio.errors
+```
+
+
+### Results Analysis Set 1
+
+All the previous results together in a data frame:
+
+```{r}
+results.set.one <- data.frame(data.frame(svm.sigmoid.smart.train.errors,svm.sigmoid.smart.test.errors,svm.sigmoid.smart.ratio.errors),
+                    data.frame(svm.radial.smart.train.errors,svm.radial.smart.test.errors,svm.radial.smart.ratio.errors),
+                    data.frame(lm.smart.train.errors,lm.smart.test.errors,lm.smart.ratio.errors),
+                    data.frame(svm.linear.smart.train.errors,svm.linear.smart.test.errors,svm.linear.smart.ratio.errors))
+
+
+as.data.frame(t(as.matrix(results.set.one)))
+
+```
+
+
+
+
+### Best Model with Cross-Validation
+
+For the best model, best parameters using the cross‐validation method is searched.
+
+Fit the best model using 'tune' function for a set of cost and epsilon parameters on the train set. For this work a k-fold equals 10 was choosen. 
+
+```{r}
+#Fit on train set
+# tuneBest <- tune(svm, output_SmartMeter ~ predictor_Consumption,  
+#                    data = d.train.t1[d.1.train,],
+#                    tunecontrol=tune.control(cross=10),
+#                    ranges = list(epsilon = seq(0,1,0.1), cost = 2^(2:9)))
+
+#read previoully run model
+tuneBest <- readRDS("tuneBest_A1.rds")
+
+#plot performance 
+plot(tuneBest)
+
+```
+
+On this graph we can see that the darker the region is the better our model is (because the RMSE is closer to zero in darker regions).
+
+From the graph you can see that models with epsilon between 0.5 and 0.7 have less error for different costs.
+
+To access the best model with the best parameters, R allows  to get it very easily and use it to make predictions.
+
+```{r}
+tunedBest <- tuneBest$best.model
+tunedBest
+```
+
+The best model is with cost 64, gamma 1 and epsilon 0.6.
+
+Get errors:
+
+```{r}
+#predict on train set
+svm.radial.smart.pred.train <- predict(tunedBest , d.train.t1[d.1.train,])
+
+#predict on test set
+svm.radial.smart.pred.test <- predict(tunedBest , d.test.t1[d.1.test,])
+
+#train errors   
+svm.radial.smart.train.errors <- MLErrors(d.train.t1[d.1.train,"output_SmartMeter"],svm.radial.smart.pred.train)
+svm.radial.smart.train.errors
+#test errors
+svm.radial.smart.test.errors <- MLErrors(d.test.t1[d.1.test,"output_SmartMeter"],svm.radial.smart.pred.test)
+svm.radial.smart.test.errors
+
+# RATIO TEST/TRAIN ----
+svm.radial.smart.ratio.errors <- svm.radial.smart.test.errors/svm.radial.smart.train.errors
+svm.radial.smart.ratio.errors
+
+```
+
+ TODO: compare the results to the previous and say what is better.
+write problems: model limitation on this computer, only one parameter, distribution
+write how to increase the accuary: cluster usw.
+
+## Analysis Set 2: Relationship between the predictor_LowTarifRatio and the total consumption of electricity.
+
+### Linear Model
+
+
+
+
+
+
