@@ -1,0 +1,43 @@
+---
+output: pdf_document
+---
+
+\begin{centering}
+
+\vspace{3 cm}
+
+\Huge
+
+{\bf CML1} 
+
+\vspace{3 cm}
+
+\normalsize
+
+\textit{Student}
+
+\Large
+Lu\'{i}s Fernando Santos Limonta
+
+
+\normalsize
+\textit{Supervisor}
+
+Dr. Matteo Tadanini
+Dr. Luca ????
+
+\vspace{3 cm}
+
+\normalsize
+bla 
+\vspace{3 cm}
+Lucerne, October 2019
+
+\vspace{2 cm}
+
+\normalsize
+Master of Science in Applied Information and Data Science
+
+Lucerne University of Applied Sciences and Arts
+
+\end{centering}
